@@ -1,1 +1,175 @@
+{{ 'sufio-cart-form.css' | asset_url | stylesheet_tag }}
+{{ 'customer.css' | asset_url | stylesheet_tag }}
 
+{% comment %}
+
+  Capture and validate VAT numbers and set business customers as tax exempt when applicable.
+  Used by Sufio for Shopify (www.sufio.com/shopify).
+
+  Usage:
+  {% render 'sufio-cart-form' %}
+
+style="display: inline-flex; gap: 1rem; width: 50%;
+  
+{% endcomment %}
+
+<div class="sufio-vat-form" style="margin: 0 auto 0 0;">
+  <div id="add-vat-number">
+    <label for="is-eu-based" class="cart-item--content-title" style="cursor: pointer;">
+      <input type="checkbox" id="is-eu-based" name="attributes[Customer type]" value="EU-based VAT Company" />
+      Are you based in the EU and VAT registered?
+    </label>
+  </div>
+  <!-- Sufio Form Fields -->
+  <div id="sufio-fields" style="display: none;">
+    <p class="tax-note caption-large rte sufio-note">Please fill in the following information. Tax will be deducted at checkout.</p>
+    <!-- Email Fields -- Email input is hidden for logged customers -->
+    <div class="customer sufio-fields">
+      <div id="sufio-form-email" class="field">
+        {% if customer.email %}
+          <input type="hidden" id="sufio-email-input" name="attributes[Email]" value="{{ customer.email }}" />
+        {% else %}
+          <input type="text" id="sufio-email-input" class="form-field-input form-field-text" name="attributes[Email]" value="{{ cart.attributes['Email'] }}" placeholder="Email" data-error-message="Please enter your email." />
+          <label class="form-field-title" for="email">Email</label>
+        {% endif %}
+    </div>
+    <!-- VAT Number Fields -- VAT number is prefilled if already entered on other pages, like Customer registration page or Customer Account page -->
+      <div id="sufio-form-vat" class="field">
+        {% if customer.metafields.sufio_vat %}
+          <input type="text" id="sufio-vat-input" class="form-field-input form-field-text" name="attributes[VAT Registration Number]" value="{{ customer.metafields.sufio_vat }}" />
+        {% else %}
+          <input type="text" id="sufio-vat-input" class="form-field-input form-field-text" name="attributes[VAT Registration Number]" minlength="12" placeholder="EU VAT Number" value="{{ cart.attributes['VAT Registration Number'] }}" />
+        {% endif %}
+        <label class="form-field-title" for="sufio-vat-input">EU VAT Number</label>
+        <!-- VAT Number Status -->
+      </div>
+    </div>
+      <div id="sufio-vat-status">
+        <div id="vat-format-invalid" style="display: none;">
+          <span class="tax-note caption-large rte sufio-note">This EU VAT number is not entered in a valid format. Use the country code prefix; avoid using dots, hyphens or extra space.</span>
+        </div>
+        <!-- <div id="sufio-vat-valid" style="display: none;">Your EU VAT number is <span style="color: #75b826;">valid</span>. Proceed to checkout.</div> -->
+        <div id="sufio-vat-invalid" class="tax-note caption-large rte sufio-note" style="display: none;">This EU VAT number is <span style="color: #ff5757;">not valid</span>. Please double-check and try again.</div>
+        <div id="sufio-loader" class="loader"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.js" integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk=" crossorigin="anonymous"></script>
+<script type="text/javascript">
+// Display the form upon checking the checkbox
+document.addEventListener('DOMContentLoaded', function (event) {
+
+var email_input = $('input#sufio-email-input');
+var vat_input = $('input#sufio-vat-input');
+var email = email_input.val();
+var vat_no = vat_input.val();
+  
+$("input#is-eu-based").click(function () {
+  if (this.checked) {
+    $('div#sufio-fields').show();
+  } else {
+    $('div#sufio-fields').hide();
+  }
+});
+
+// Format validation
+function validate_format(vat_number) {
+  var regex_validation = /^[A-Z]{2,}[A-Z0-9]+$/;
+  if (!vat_number) {
+    return false;
+  }
+  return vat_number.match(regex_validation);
+}
+
+vat_input.change(function () {
+  //var vat_no = $('input#sufio-vat-input').val();
+  if (!vat_input.val()) {
+    //$('div#sufio-vat-valid').hide();
+    $('div#sufio-vat-invalid').hide();
+    $('div#sufio-loader').hide();
+    $('div#vat-format-invalid').hide();
+    return;
+  }
+  var format_validation = validate_format(vat_input.val());
+  if (format_validation) {
+    // If VAT number has the correct format, call the VAT check
+    $('div#vat-format-invalid').hide();
+    //$('div#sufio-vat-valid').hide();
+    $('div#sufio-vat-invalid').hide();
+    $('div#sufio-loader').show();
+    var url = '/apps/sufio/vat-check/';
+    var number = $(this).val();
+    $.ajax({
+      type: 'GET',
+      dataType: 'jsonp',
+      url: url,
+      data: { number: number },
+      success: function (data) {
+        var result = data.result;
+        if (result) {
+        // VAT check valid
+        //$('div#sufio-vat-valid').show();
+        $('div#sufio-vat-invalid').hide();
+        $('div#sufio-loader').hide();
+        } else {
+        // VAT check invalid
+        //$('div#sufio-vat-valid').hide();
+        $('div#sufio-vat-invalid').show();
+        $('div#sufio-loader').hide();
+        }
+      }
+    });
+  } else {
+    // If VAT number has the correct format, display the message
+    $('div#vat-format-invalid').show();
+    $('div#sufio-vat-invalid').hide();
+    //$('div#sufio-vat-valid').hide();
+    $('div#sufio-loader').hide();
+  };
+
+});
+
+$('input[name=checkout],button[name=checkout],input[name=goto_pp],button[name=goto_pp]').on("click", function() {
+  // If enabled, customers will be unable to submit VAT numbers without entering their emails
+  var check_email = true;  
+  var submit_button = $(this);
+  
+  email_input[0].setCustomValidity('');
+
+  if ((email) && (vat_no)) {
+    // Submit email and VAT number for validation and set customer as tax exempt
+    $.ajax({
+      type : "GET",
+      dataType: "jsonp",
+      url: "/apps/sufio/customer-vat/",
+      data: { email: email, vat_no: vat_no },
+      success: function(data) {
+        // Proceed to checkout after successfully sending the VAT number
+        var form = submit_button.parents('form');
+        var action = form.attr('action');
+        form.attr('action', action + (action.indexOf('?') >= 0 ? '&' : '?') + 'checkout[email]=' + encodeURIComponent(email));
+        submit_button.unbind().click();
+      }
+    });
+  } else if ((vat_no) && (check_email)) {
+    // Missing email - display error message
+    email_input.prop("required", "required");
+    email_input[0].setCustomValidity(email_input.data("error-message"));
+    email_input[0].reportValidity();
+    email_input.removeProp("required");
+    return false;
+  } else {
+    return true;
+  }
+
+  // Proceed to checkout after one second
+  setTimeout( function () { 
+    submit_button.unbind().click();
+  }, 1000);
+
+  return false;
+});
+});
+</script>
+    
